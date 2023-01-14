@@ -11,6 +11,8 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.sql.SQLException;
+import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 
 public class DiceGUI
@@ -124,6 +126,30 @@ public class DiceGUI
                 }
             }
         });
+        left_show_history.addActionListener(new ActionListener()
+        {
+            public void actionPerformed(ActionEvent e)
+            {
+                if (e.getSource() == left_show_history)
+                {
+                    History history = new History(left_name, left_history);
+                    Thread history_thread = new Thread(history);
+                    history_thread.start();
+                }
+            }
+        });
+        right_show_history.addActionListener(new ActionListener()
+        {
+            public void actionPerformed(ActionEvent e)
+            {
+                if (e.getSource() == right_show_history)
+                {
+                    History history = new History(right_name, right_history);
+                    Thread history_thread = new Thread(history);
+                    history_thread.start();
+                }
+            }
+        });
     }
 
     public static void main(String[] args)
@@ -134,7 +160,14 @@ public class DiceGUI
         frame.pack();
         frame.setBounds(500, 300, 1000, 400);
         frame.setVisible(true);
-
+        //初始化数据库连接，方便后续操作
+        try
+        {
+            List<Entity> users = Db.use().findAll(Entity.create("user").set("username", "admin"));
+        } catch (SQLException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     {
@@ -228,8 +261,10 @@ public class DiceGUI
         final JLabel label6 = new JLabel();
         label6.setText("历史胜负");
         panel2.add(label6, new GridConstraints(4, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        final JScrollPane scrollPane1 = new JScrollPane();
+        panel2.add(scrollPane1, new GridConstraints(4, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
         left_history = new JTextArea();
-        panel2.add(left_history, new GridConstraints(4, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(150, 50), null, 0, false));
+        scrollPane1.setViewportView(left_history);
         final JPanel panel7 = new JPanel();
         panel7.setLayout(new GridLayoutManager(5, 2, new Insets(0, 0, 0, 0), -1, -1));
         panel.add(panel7, new GridConstraints(1, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
@@ -289,9 +324,11 @@ public class DiceGUI
         final JLabel label11 = new JLabel();
         label11.setText("历史胜负");
         panel7.add(label11, new GridConstraints(4, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        final JScrollPane scrollPane2 = new JScrollPane();
+        panel7.add(scrollPane2, new GridConstraints(4, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
         right_history = new JTextArea();
         right_history.setText("");
-        panel7.add(right_history, new GridConstraints(4, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(150, 50), null, 0, false));
+        scrollPane2.setViewportView(right_history);
     }
 
     /**
@@ -471,7 +508,6 @@ class Login implements Runnable
                 else
                 {
                     JOptionPane.showMessageDialog(panel, "登录成功，账号名：" + username);
-                    System.out.println(users.get(0).get("username"));
                 }
                 username_field.setEnabled(false);
                 start.setEnabled(true);
@@ -484,5 +520,92 @@ class Login implements Runnable
                 throw new RuntimeException(e);
             }
         }
+    }
+}
+
+class History implements Runnable
+{
+    private JTextField username_field;
+    private JTextArea history_field;
+
+    public History(JTextField username, JTextArea history)
+    {
+        this.username_field = username;
+        this.history_field = history;
+    }
+
+    public void run()
+    {
+        String username = username_field.getText();
+        try
+        {
+            List<Entity> history = Db.use().query("select * from dice_history where left_username = ? or right_username = ?", username, username);
+            if(history.isEmpty())
+            {
+                history_field.setText("您尚未和任何玩家对决");
+                return;
+            }
+            else
+            {
+                List<Entity> win_count = Db.use().query("select count(*) win from dice_history where winner = ?", username);
+                List<Entity> lose_count = Db.use().query("select count(*) lose from dice_history where (left_username = ? or right_username = ?) and winner <> ? and winner is not null", username, username, username);
+                List<Entity> tie_count = Db.use().query("select count(*) tie from dice_history where (left_username = ? or right_username = ?) and winner is null", username, username);
+                long win = (Long) win_count.get(0).get("win");
+                long lose =(Long) lose_count.get(0).get("lose");
+                long tie = (Long) tie_count.get(0).get("tie");
+                long sum = win + lose + tie;
+                StringBuffer history_buffer = new StringBuffer();
+                history_buffer.append("你与其他玩家对决了");
+                history_buffer.append(sum);
+                history_buffer.append("次\n其中赢");
+                history_buffer.append(win);
+                history_buffer.append("次，输");
+                history_buffer.append(lose);
+                history_buffer.append("次，平局");
+                history_buffer.append(tie);
+                history_buffer.append("次。\n以下是对决历史：\n");
+
+                Iterator<Entity> history_it = history.iterator();
+                while(history_it.hasNext())
+                {
+                    Entity temp = history_it.next();
+                    String enemy = "";
+                    int my_score = 0;
+                    int enemy_score = 0;
+                    String result = "";
+                    if(((String)temp.get("left_username")).equals(username))
+                    {
+                        enemy = (String)temp.get("right_username");
+                        my_score = (Integer) temp.get("left_sum");
+                        enemy_score = (Integer) temp.get("right_sum");
+                    }
+                    else
+                    {
+                        enemy = (String)temp.get("left_username");
+                        my_score = (Integer) temp.get("right_sum");
+                        enemy_score = (Integer) temp.get("left_sum");
+                    }
+                    result = (my_score > enemy_score) ? "赢" : ((my_score == enemy_score) ? "平局" : "输");
+                    Date dice_date = (Date) temp.get("time");
+                    history_buffer.append(dice_date);
+                    history_buffer.append(" 与");
+                    history_buffer.append(enemy);
+                    history_buffer.append("对决，比分");
+                    history_buffer.append(my_score);
+                    history_buffer.append(":");
+                    history_buffer.append(enemy_score);
+                    history_buffer.append(",");
+                    history_buffer.append(result);
+                    history_buffer.append("\n");
+                }
+                history_field.setText(history_buffer.toString());
+            }
+
+        } catch (SQLException e)
+        {
+            throw new RuntimeException(e);
+        }
+
+
     }
 }
