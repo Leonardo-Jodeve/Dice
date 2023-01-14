@@ -154,7 +154,7 @@ public class DiceGUI
 
     public static void main(String[] args)
     {
-        JFrame frame = new JFrame("DiceGUI");
+        JFrame frame = new JFrame("双人骰子游戏");
         frame.setContentPane(new DiceGUI().panel);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.pack();
